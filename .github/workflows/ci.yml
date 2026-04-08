@@ -1,9 +1,18 @@
-name: CI
+name: CI/CD
 
 on:
   push:
     branches: [main, master]
   pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-cd-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: write
 
 jobs:
   frontend:
@@ -16,7 +25,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - run: npm install
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
       - run: npm run lint --if-present
       - run: npm run build
 
@@ -30,7 +41,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - run: npm install
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci
       - run: npm run lint --if-present
       - run: npm run build
 
@@ -44,10 +57,17 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: ml-service/requirements.txt
       - run: pip install -r requirements.txt
       - run: python -m pipeline.data_generator --samples-per-class 100 --out data/dataset.csv
       - run: python train.py --dataset data/dataset.csv --output-dir artifacts --model logreg --max-samples 200
       - run: python -m compileall app
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ml-artifacts
+          path: ml-service/artifacts
+          if-no-files-found: error
 
   ml-service-api-smoke:
     runs-on: ubuntu-latest
@@ -60,15 +80,60 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: ml-service/requirements.txt
       - run: pip install -r requirements.txt
-      - run: python train.py --dataset data/dataset.csv --output-dir artifacts --model logreg --max-samples 200
+      - uses: actions/download-artifact@v4
+        with:
+          name: ml-artifacts
+          path: ml-service/artifacts
       - run: uvicorn app.main:app --host 127.0.0.1 --port 8000 &
-      - run: python -c "import time; time.sleep(3)"
+      - run: |
+          for i in {1..20}; do
+            if curl -fsS http://127.0.0.1:8000/health > /dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "ML service failed health check startup"
+          exit 1
       - run: python -c "import urllib.request; code=urllib.request.urlopen('http://127.0.0.1:8000/health').getcode(); assert code==200"
       - run: python -c "import json, urllib.request; payload=json.dumps({'fileName':'sample.py','fileType':'text/plain','textContent':'def add(a,b): return a+b'}).encode(); req=urllib.request.Request('http://127.0.0.1:8000/predict', data=payload, headers={'Content-Type':'application/json'}); body=json.loads(urllib.request.urlopen(req).read().decode()); assert 'ai_probability' in body and 'model_version' in body"
 
   docker-compose-build:
     runs-on: ubuntu-latest
+    needs: [frontend, backend, ml-service-api-smoke]
     steps:
       - uses: actions/checkout@v4
       - run: docker compose build
+
+  publish-ghcr-images:
+    runs-on: ubuntu-latest
+    needs: docker-compose-build
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/mlops-project-backend:latest
+      - uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/mlops-project-frontend:latest
+      - uses: docker/build-push-action@v6
+        with:
+          context: ./ml-service
+          file: ./ml-service/Dockerfile
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/mlops-project-ml-service:latest
