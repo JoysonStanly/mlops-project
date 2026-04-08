@@ -97,8 +97,34 @@ jobs:
           done
           echo "ML service failed health check startup"
           exit 1
-      - run: python -c "import urllib.request; code=urllib.request.urlopen('http://127.0.0.1:8000/health').getcode(); assert code==200"
-      - run: python -c "import json, urllib.request; payload=json.dumps({'fileName':'sample.py','fileType':'text/plain','textContent':'def add(a,b): return a+b'}).encode(); req=urllib.request.Request('http://127.0.0.1:8000/predict', data=payload, headers={'Content-Type':'application/json'}); body=json.loads(urllib.request.urlopen(req).read().decode()); assert 'ai_probability' in body and 'model_version' in body"
+        - run: |
+          python - <<'PY'
+          import urllib.request
+
+          code = urllib.request.urlopen('http://127.0.0.1:8000/health').getcode()
+          assert code == 200
+          PY
+        - run: |
+          python - <<'PY'
+          import json
+          import urllib.request
+
+          payload = json.dumps(
+            {
+              'fileName': 'sample.py',
+              'fileType': 'text/plain',
+              'textContent': 'def add(a,b): return a+b',
+            }
+          ).encode()
+
+          req = urllib.request.Request(
+            'http://127.0.0.1:8000/predict',
+            data=payload,
+            headers={'Content-Type': 'application/json'},
+          )
+          body = json.loads(urllib.request.urlopen(req).read().decode())
+          assert 'ai_probability' in body and 'model_version' in body
+          PY
 
   docker-compose-build:
     runs-on: ubuntu-latest
