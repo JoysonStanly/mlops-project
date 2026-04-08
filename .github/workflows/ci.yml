@@ -87,7 +87,8 @@ jobs:
         with:
           name: ml-artifacts
           path: ml-service/artifacts
-      - run: uvicorn app.main:app --host 127.0.0.1 --port 8000 &
+      - run: |
+          uvicorn app.main:app --host 127.0.0.1 --port 8000 &
       - run: |
           for i in {1..20}; do
             if curl -fsS http://127.0.0.1:8000/health > /dev/null; then
@@ -97,14 +98,14 @@ jobs:
           done
           echo "ML service failed health check startup"
           exit 1
-        - run: |
+      - run: |
           python - <<'PY'
           import urllib.request
 
           code = urllib.request.urlopen('http://127.0.0.1:8000/health').getcode()
           assert code == 200
           PY
-        - run: |
+      - run: |
           python - <<'PY'
           import json
           import urllib.request
