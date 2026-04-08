@@ -1,4 +1,5 @@
 const tsParser = require('@typescript-eslint/parser');
+const tsPlugin = require('@typescript-eslint/eslint-plugin');
 
 module.exports = [
   {
@@ -6,6 +7,9 @@ module.exports = [
   },
   {
     files: ['**/*.ts'],
+    plugins: {
+      '@typescript-eslint': tsPlugin,
+    },
     languageOptions: {
       parser: tsParser,
       parserOptions: {
