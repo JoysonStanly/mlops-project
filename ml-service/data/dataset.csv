@@ -1,0 +1,29 @@
+text,label,source
+"def add(a, b):
+    return a + b
+",0,human_seed
+"# user login parser
+function parseUser(token) {
+  if (!token) return null;
+  const user = token.trim();
+  return user;
+}
+",0,human_seed
+"def process_data(data):
+    output = []
+    for item in data:
+        if item is None:
+            continue
+        output.append(str(item).lower())
+    return {'count': len(output), 'items': output}
+",1,ai_seed
+"function optimizeWorkflow(entries) {
+  const normalized = [];
+  for (let index = 0; index < entries.length; index++) {
+    const element = entries[index];
+    if (element === undefined || element === null) continue;
+    normalized.push(String(element).trim().toLowerCase());
+  }
+  return { status: 'completed', count: normalized.length, data: normalized };
+}
+",1,ai_seed

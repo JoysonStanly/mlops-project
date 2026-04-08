@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install
+      - run: npm run lint --if-present
+      - run: npm run build
+
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install
+      - run: npm run lint --if-present
+      - run: npm run build
+
+  ml-service-training:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ml-service
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install -r requirements.txt
+      - run: python -m pipeline.data_generator --samples-per-class 100 --out data/dataset.csv
+      - run: python train.py --dataset data/dataset.csv --output-dir artifacts --model logreg --max-samples 200
+      - run: python -m compileall app
+
+  ml-service-api-smoke:
+    runs-on: ubuntu-latest
+    needs: ml-service-training
+    defaults:
+      run:
+        working-directory: ml-service
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install -r requirements.txt
+      - run: python train.py --dataset data/dataset.csv --output-dir artifacts --model logreg --max-samples 200
+      - run: uvicorn app.main:app --host 127.0.0.1 --port 8000 &
+      - run: python -c "import time; time.sleep(3)"
+      - run: python -c "import urllib.request; code=urllib.request.urlopen('http://127.0.0.1:8000/health').getcode(); assert code==200"
+      - run: python -c "import json, urllib.request; payload=json.dumps({'fileName':'sample.py','fileType':'text/plain','textContent':'def add(a,b): return a+b'}).encode(); req=urllib.request.Request('http://127.0.0.1:8000/predict', data=payload, headers={'Content-Type':'application/json'}); body=json.loads(urllib.request.urlopen(req).read().decode()); assert 'ai_probability' in body and 'model_version' in body"
+
+  docker-compose-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker compose build

@@ -1,0 +1,17 @@
+stages:
+  generate_dataset:
+    cmd: python -m pipeline.data_generator --samples-per-class 250 --out data/dataset.csv
+    deps:
+      - pipeline/data_generator.py
+    outs:
+      - data/dataset.csv
+
+  train_model:
+    cmd: python train.py --dataset data/dataset.csv --output-dir artifacts --model logreg
+    deps:
+      - train.py
+      - app/features.py
+      - data/dataset.csv
+    outs:
+      - artifacts/model.joblib
+      - artifacts/model_metadata.json
